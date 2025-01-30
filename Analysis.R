@@ -100,6 +100,7 @@ get_PCA_data <- function(protein_data, sample_with_age_group){
   # This function standardizes the data by default before performing PCA
   pca_data <- prcomp(data)
   
+  # Add the sample nr and age group to the data
   data$sample <- sample_with_age_group$Sample
   data$age_group <- sample_with_age_group$Sampling_age_group
   
@@ -193,7 +194,7 @@ get_loadings <- function(pca_data){
   
   loadings <- cbind(Protein = rownames(loadings), loadings)
   
-  # Identify the top 5 loadings for PC1
+  # Identify the top 10 loadings for PC1
   # Arrange the loadings in descending order based on the absolute values of PC1
   # Select only the PC1 column and take the top 5 loadings
   top_10_loadings_pc1 <- loadings %>%
@@ -201,7 +202,7 @@ get_loadings <- function(pca_data){
     select(PC1) %>%
     head(10)
   
-  # Identify the top 5 loadings for PC2 following the same steps for PC1
+  # Identify the top 10 loadings for PC2 following the same steps for PC1
   top_10_loadings_pc2 <- loadings %>%
     arrange(desc(abs(PC2))) %>%
     select(PC2) %>%
@@ -281,24 +282,30 @@ get_filtered_data <- function(data, dataset_name, sample_with_age_group){
     return(list(data_filtered = data_filtered, 
                 protein_data_filt = protein_data_filt))
   } else if(data_name == "IO_data"){
-    
+    # Remove columns Plate ID and QC Warning
+    # Remove 'A' from the Sample column values
+    # Convert all values into numeric values
     data_filtered <- data %>%
       select(-`Plate ID`, -`QC Warning`) %>%
-      # rename(Sample = Assay) %>%
       mutate(Sample = gsub("A", "", Sample)) %>%
       mutate(across(everything(), as.numeric))
     
+    # Impute NA values with the LOD values of that protein
+    # Convert all values into numeric values
     data_filtered <- data_filtered %>%
       mutate(across(everything(), ~ ifelse(is.na(.), lod_row[[cur_column()]], .))) %>%
       mutate(across(everything(), as.numeric))
 
+    # Select only the cytokine columns for the protein_data_filt dataset
     protein_data_filt <- data_filtered %>%
       select(-Sample)
     
+    # Add sample nr to the filtered dataset
     data_filtered <- data_filtered %>%
       left_join(sample_with_age_group, by =  "Sample") %>%
       mutate(as.factor(Sampling_age_group))
     
+    # Return a list containing the filtered data and the relevant protein data
     return(list(data_filtered = data_filtered,
                 protein_data_filt = protein_data_filt))
   } else{
@@ -311,17 +318,19 @@ get_filtered_data <- function(data, dataset_name, sample_with_age_group){
 get_table_values <- function(table, group_var){
   variables <- colnames(table)
   
+  # Create an empty list for the table values
   table_values <- list()
   
   if(group_var == "Sampling_age_group") {
     cohort_table_values <- list()
-    
+    # Count the number of patients in the data and add this number to cohort_count
     cohort_count <- table %>%
       summarise(count = n()) %>%
       select(count_cohort = count)
     cohort_table_values$cohort_count <- cohort_count
     
     if("Gender" %in% variables) {
+      # Count the number of males and females and calculate the percentages
       gender_count <- table %>%
         count(Gender) %>%
         mutate(Total_count = sum(n),
@@ -331,6 +340,7 @@ get_table_values <- function(table, group_var){
     }
     
     if("Age_onset_group" %in% variables) {
+      # Count the number of patients in each age of onset group and calculate the percentages
       onset_count <- table %>%
         count(Age_onset_group) %>%
         mutate(Total_count = sum(n),
@@ -340,6 +350,7 @@ get_table_values <- function(table, group_var){
     }
     
     if("Age_sampling" %in% variables & "EASI" %in% variables) {
+      # Calculate the averages and standard deviations for the age and EASI score
       averages_cohort <- table %>%
         summarise(avg_age_cohort = mean(Age_sampling),
                   sd_age_cohort = sd(Age_sampling),
@@ -350,6 +361,7 @@ get_table_values <- function(table, group_var){
     }
     
     if("Atopy_yes_or_no" %in% variables) {
+      # Count the number of patients with comorbidities and calculate the percentages
       comorbidities <- table %>%
         count(Atopy_yes_or_no) %>%
         mutate(Total_count = sum(n),
@@ -359,7 +371,7 @@ get_table_values <- function(table, group_var){
     }
     
     if("AA" %in% variables){
-      # Count the number of cases of Allergic Asthma (AA) for each cluster and calculate their percentages
+      # Count the number of cases of Allergic Asthma (AA) and calculate their percentages
       aa_cohort <- table %>%
         count(AA) %>%
         mutate(Total_count = sum(n),
@@ -369,7 +381,7 @@ get_table_values <- function(table, group_var){
     }
     
     if("ARC" %in% variables){
-      # Count the number of cases of Allergic Rhinoconjunctivitis (ARC) for each cluster and calculate their percentages
+      # Count the number of cases of Allergic Rhinoconjunctivitis (ARC) and calculate their percentages
       arc_cohort <- table %>%
         count(ARC) %>%
         mutate(Total_count = sum(n),
@@ -379,7 +391,7 @@ get_table_values <- function(table, group_var){
     }
     
     if("FA" %in% variables){
-      # Count the number of cases of Food Allergy (FA) for each cluster and calculate their percentages
+      # Count the number of cases of Food Allergy (FA) and calculate their percentages
       fa_cohort <- table %>%
         count(FA) %>%
         mutate(Total_count = sum(n),
@@ -395,7 +407,7 @@ get_table_values <- function(table, group_var){
   table_values$count_per_cluster <- count_per_cluster
   
   if("Gender" %in% variables) {
-    # Count the number of males and females per cluster and calculate their percentages
+    # Count the number of males and females per cluster/age group and calculate their percentages
     gender_per_cluster <- table %>%
       group_by(!!sym(group_var), Gender) %>%
       count(Gender) %>%
@@ -407,7 +419,7 @@ get_table_values <- function(table, group_var){
   }
   
   if("Age_onset_group" %in% variables) {
-    # Count the number of cases per age-onset group for each cluster and calculate their percentages
+    # Count the number of cases per age-onset group for each cluster/age group and calculate their percentages
     onset_per_cluster <- table %>%
       group_by(!!sym(group_var), Age_onset_group) %>%
       count(Age_onset_group) %>%
@@ -419,7 +431,7 @@ get_table_values <- function(table, group_var){
   }
   
   if("Age_sampling" %in% variables & "EASI" %in% variables){
-    # Calculate the mean and standard deviation of age and EASI score for each cluster
+    # Calculate the mean and standard deviation of age and EASI score for each cluster/age group
     averages_per_cluster <- table %>%
       group_by(!!sym(group_var)) %>%
       summarise(avg_age = mean(Age_sampling),
@@ -439,7 +451,7 @@ get_table_values <- function(table, group_var){
   }
   
   if("Atopy_yes_or_no" %in% variables){
-    # Count comorbidities for each cluster and calculate their percentages
+    # Count comorbidities for each cluster/age group and calculate their percentages
     comorbidities_per_cluster <- table %>%
       group_by(!!sym(group_var), Atopy_yes_or_no) %>%
       count(Atopy_yes_or_no) %>%
@@ -451,7 +463,7 @@ get_table_values <- function(table, group_var){
   }
   
   if("AA" %in% variables){
-    # Count the number of cases of Allergic Asthma (AA) for each cluster and calculate their percentages
+    # Count the number of cases of Allergic Asthma (AA) for each cluster/age group and calculate their percentages
     aa_per_cluster <- table %>%
       group_by(!!sym(group_var), AA) %>%
       count(AA) %>%
@@ -463,7 +475,7 @@ get_table_values <- function(table, group_var){
   }
   
   if("ARC" %in% variables){
-    # Count the number of cases of Allergic Rhinoconjunctivitis (ARC) for each cluster and calculate their percentages
+    # Count the number of cases of Allergic Rhinoconjunctivitis (ARC) for each cluster/age group and calculate their percentages
     arc_per_cluster <- table %>%
       group_by(!!sym(group_var), ARC) %>%
       count(ARC) %>%
@@ -475,7 +487,7 @@ get_table_values <- function(table, group_var){
   }
   
   if("FA" %in% variables){
-    # Count the number of cases of Food Allergy (FA) for each cluster and calculate their percentages
+    # Count the number of cases of Food Allergy (FA) for each cluster/age group and calculate their percentages
     fa_per_cluster <- table %>%
       group_by(!!sym(group_var), FA) %>%
       count(FA) %>%
@@ -487,6 +499,7 @@ get_table_values <- function(table, group_var){
   }
   
   if(group_var == "Sampling_age_group") {
+    # Return a list of all summarized tables and the values for the total cohort
     return(list(table_values = table_values,
                 cohort_table_values = cohort_table_values))
   } else {
@@ -616,14 +629,14 @@ mutate_cluster_data <- function(table, group_var){
 # Function to pivot data from wide to long format and back to wide
 reshape_cluster_data <- function(table, group_var){
   if(group_var == "Cohort") {
-    # Detecteer de waarde van n die niet NA is
+    # Detect the value of n that is not NA
     valid_n <- table %>%
       filter(!is.na(Cohort) & grepl("Total cohort \\(n=", Cohort)) %>%
       pull(Cohort) %>%
       unique() %>%
       .[1]
     
-    # Vervang "Total cohort (n=NA)" door de gedetecteerde waarde
+    # Sub "Total cohort (n=NA)" with the valid value of n
     table <- table %>%
       mutate(Cohort = ifelse(Cohort == "Total cohort (n=NA)", valid_n, Cohort))
   }
@@ -1373,6 +1386,7 @@ merge_datasets <- function(){
   # Transform IO data to the same format as CVD and Inflammation data
   lod_row <- IO_data %>% filter(`...1` == "LOD")
   
+  # Impute NA values with the LOD value of that protein
   dataset <- IO_data %>%
     mutate(across(everything(), ~ ifelse(is.na(.), lod_row[[cur_column()]], .)))
   
@@ -1386,14 +1400,19 @@ merge_datasets <- function(){
     select(-`QC Deviation from median`) %>%
     rename(Sample = Assay)
   
+  # Identify proteins with ".y" and remove these from the dataset
+  # Remove ".x" from the protein names
   y_columns <- colnames(CVD_and_Inflammation_data)[grepl("\\.y$", colnames(CVD_and_Inflammation_data))]
   data_without_y_columns <- CVD_and_Inflammation_data %>%
     select(-all_of(y_columns)) %>%
     rename_with(~ gsub("\\.x$", "", .), ends_with(".x"))
   
+  # Join the CVD_and_Inflammation dataset with the IO dataset
   CVD_Inflammation_and_IO_data <<- left_join(IO_data, data_without_y_columns, by = "Sample") %>%
     select(-`Plate ID`, -`QC Warning`)
   
+  # Join the Clinical dataset of CVD_and_Inflammation with the Clinical dataset of IO
+  # to ensure all clinical data is included
   clinical_dataset <- Clinical_data_IO_panel %>%
     left_join(Clinical_data_CVD_and_Inflammation, by = "PatientID") %>%
     rename(EASI = EASI.x)
